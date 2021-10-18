@@ -3,6 +3,7 @@ pragma solidity ^0.8.0;
 
 import "hardhat/console.sol";
 import "./interfaces/IERC20.sol";
+import "./utils/safeMath.sol";
 
 struct TemplateInfos {
     address     owner;
@@ -14,7 +15,7 @@ struct TemplateInfos {
 contract MarketPlaceGraphLinqGateway {
     mapping(uint256 => TemplateInfos) templates;
     mapping(address => mapping(uint256 => bool)) access;
-
+    using SafeMath for uint256;
     /*
     ** Manager of the contract to revoke or grant special access to template
     */
@@ -25,6 +26,8 @@ contract MarketPlaceGraphLinqGateway {
     */
     address private _glqTokenAddress;
 
+    uint256 _totalFeesGenerated;
+
     constructor(address glqAddress, address manager) {
         _glqTokenAddress = glqAddress;
         _glqManager = manager;
@@ -32,7 +35,16 @@ contract MarketPlaceGraphLinqGateway {
 
     
     /* Getter ---- Read-Only */
-    function hasAccess(uint256 templateId) public view returns(bool) {
+    function getTotalGeneratedFees() public view returns(uint256) {
+        return _totalFeesGenerated;
+    }
+
+    function getAvailableFees() public view returns(uint256) {
+         IERC20 glqToken = IERC20(_glqTokenAddress);
+        return glqToken.balanceOf(address(this));
+    }
+
+    function hasAccess(uint256 templateId, address user) public view returns(bool) {
         require(
             templates[templateId].owner != address(0),
             "GLQ Template Id invalid");
@@ -40,7 +52,11 @@ contract MarketPlaceGraphLinqGateway {
             templates[templateId].state != false,
             "Template is currently in private state, please contact the owner.");
 
-        return access[msg.sender][templateId] != false;
+        return access[user][templateId] != false;
+    }
+
+    function fetchTemplatePrice(uint256 templateId) public view returns(uint256) {
+        return templates[templateId].price;
     }
 
     function fetchCustomers(uint256 templateId) public view returns(address[] memory) {
@@ -53,6 +69,22 @@ contract MarketPlaceGraphLinqGateway {
     /* Getter ---- Read-Only */
 
     /* Setter - Read & Modifications */
+
+    /*
+    ** Withdraw the fees generated on the contract from sales
+    */
+    function withdrawFees(address toAddr) public {
+      require(
+            msg.sender == _glqManager,
+            "Restricted to the GLQ Manager"
+        );
+        IERC20 glqToken = IERC20(_glqTokenAddress);
+        uint256 totalFees = glqToken.balanceOf(address(this));
+        require(
+            glqToken.transfer(toAddr, totalFees) == true,
+            "Error on transfering GLQ fees"
+        );
+    }
 
     /*
     ** Super access to grant or revoke access to a specific address on a template
@@ -102,20 +134,28 @@ contract MarketPlaceGraphLinqGateway {
         require(
             owner != address(0),
             "GLQ Template Id invalid");
+
         require(
             glqToken.balanceOf(msg.sender) >= price,
             "Not enough GLQ funds on the wallet to buy this template");
 
         require(
-            glqToken.transferFrom(msg.sender, owner, price) == true,
+            glqToken.transferFrom(msg.sender, address(this), price) == true,
+            "Error on transfering GLQ to the template owner"
+        );
+        // 10% kept as fee for the Graphlinq Protocol
+        uint256 priceTaxed = price.div(10).mul(9);
+        _totalFeesGenerated += price.sub(priceTaxed);
+
+        require(
+            glqToken.transfer(owner, priceTaxed) == true,
             "Error on transfering GLQ to the template owner"
         );
         
-        // set access to the template
-        access[msg.sender][templateId] = true;
         templates[templateId].customers.push(msg.sender);
-
-        return true;
+        
+        // set access to the template
+        return access[msg.sender][templateId] = true;
     }
 
     /* Setter - Read & Modifications */

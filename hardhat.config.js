@@ -10,12 +10,23 @@ task("accounts", "Prints the list of accounts", async (taskArgs, hre) => {
   }
 });
 
-// You need to export an object to set up your config
-// Go to https://hardhat.org/config/ to learn more
+
+const MAIN_NET_PRIVATE_KEY = "";
+const ROPSTEN_PRIVATE_KEY = "";
 
 /**
  * @type import('hardhat/config').HardhatUserConfig
  */
 module.exports = {
   solidity: "0.8.4",
+  networks: {
+    mainnet: {
+      url: `https://mainnet.infura.io/v3/f565a35af5f84cbdb50d07b954725a9b`,
+      accounts: [`0x${MAIN_NET_PRIVATE_KEY}`],
+    },
+    ropsten: {
+      url: `https://ropsten.infura.io/v3/f565a35af5f84cbdb50d07b954725a9b`,
+      accounts: [`0x${ROPSTEN_PRIVATE_KEY}`],
+    },
+  }
 };
